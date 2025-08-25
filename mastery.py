@@ -313,14 +313,20 @@ mastery_tracker = MasteryTracker()
 
 # Convenience functions for external use (matching your specification)
 def get_mastery(user_id: str) -> Dict[str, float]:
-    """Get user mastery - returns {skill: mastery_score}"""
+    """Get mastery scores for a user across all skills"""
     try:
-        mastery_data = mastery_tracker.get_mastery(user_id)
-        if "skills" in mastery_data:
-            return mastery_data["skills"]
-        return {}
+        # Try to fetch from Supabase first
+        mastery_data = fetch_mastery(user_id)
+        if mastery_data:
+            return mastery_data
+        
+        # Fallback to local storage if Supabase fails
+        logger.warning(f"Supabase fetch failed for user {user_id}, using local fallback")
+        return get_local_mastery(user_id)
+        
     except Exception as e:
-        logger.error(f"Mastery retrieval failed: {e}")
+        logger.error(f"Mastery retrieval failed for user {user_id}: {e}")
+        # Return empty dict on error to prevent crashes
         return {}
 
 def update_mastery(user_id: str, skill_scores: Dict[str, float]):

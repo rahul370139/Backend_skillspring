@@ -454,3 +454,40 @@ class CareerDiscoveryResponse(BaseModel):
     recommended_careers: List[Dict[str, Any]]
     insights: Dict[str, Any]
     skill_analysis: Dict[str, Any]
+
+class WorkflowStep(BaseModel):
+    step: int
+    action: str
+    description: str
+    estimated_time: Optional[str] = None
+    resources: Optional[List[str]] = None
+
+class WorkflowResponse(BaseModel):
+    workflow: List[WorkflowStep]
+    total_steps: int
+    estimated_duration: str
+    difficulty_level: str
+
+class AgentRequest(BaseModel):
+    pdf_id: str
+    user_id: str
+    topic: Optional[str] = ""
+    num: Optional[int] = 8
+    message: Optional[str] = ""
+
+class AgentResponse(BaseModel):
+    status: str
+    data: Dict[str, Any]
+    message: str
+
+class IntentDetectionRequest(BaseModel):
+    message: str
+    pdf_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+class IntentDetectionResponse(BaseModel):
+    intent: str
+    confidence: float
+    message: str
+    context: Dict[str, Any]
+    suggestions: Optional[List[str]] = None

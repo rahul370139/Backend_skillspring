@@ -373,7 +373,7 @@ class AgentRouter:
         }
         self.confidence_threshold = 0.15  # Lower threshold for better detection
     
-    def detect_intent(self, message: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    def detect_intent(self, message: str, pdf_present: bool = False) -> Dict[str, Any]:
         """Detect user intent from message and context"""
         try:
             message_lower = message.lower().strip()
@@ -408,16 +408,16 @@ class AgentRouter:
                         "intent": best_intent[0],
                         "confidence": confidence,
                         "message": message,
-                        "context": context or {}
+                        "pdf_present": pdf_present
                     }
             
             # Check for empty message with PDF context
-            if not message_lower and context and context.get("pdf_present"):
+            if not message_lower and pdf_present:
                 return {
                     "intent": "diagnostic",
                     "confidence": 0.8,
                     "message": message,
-                    "context": context,
+                    "pdf_present": pdf_present,
                     "reason": "Default diagnostic for PDF upload"
                 }
             
@@ -426,7 +426,7 @@ class AgentRouter:
                 "intent": "clarify",
                 "confidence": 0.0,
                 "message": message,
-                "context": context or {},
+                "pdf_present": pdf_present,
                 "suggestions": self._generate_clarification_suggestions()
             }
             
@@ -436,7 +436,7 @@ class AgentRouter:
                 "intent": "clarify",
                 "confidence": 0.0,
                 "message": message,
-                "context": context or {},
+                "pdf_present": pdf_present,
                 "error": str(e)
             }
     

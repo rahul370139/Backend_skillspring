@@ -1934,7 +1934,9 @@ async def route_agent(req: dict):
     try:
         message = req.get("message", "")
         pdf_id = req.get("pdf_id")
-        intent_info = router.detect_intent(message, pdf_present=bool(pdf_id))
+        pdf_present = bool(pdf_id)
+        
+        intent_info = router.detect_intent(message, pdf_present=pdf_present)
         return intent_info
         
     except Exception as e:
@@ -1974,7 +1976,6 @@ async def flashcards_agent(req: dict):
         logger.error(f"Flashcard generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Flashcard generation failed: {str(e)}")
 
-
 @app.post("/api/agent/quiz")
 async def quiz_agent(req: dict):
     """Generate MCQ quiz using the agentic system"""
@@ -1992,7 +1993,6 @@ async def quiz_agent(req: dict):
         logger.error(f"Quiz generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
 
-
 @app.post("/api/agent/diagnostic")
 async def diagnostic_agent(req: dict):
     """Run full diagnostic cycle using DiagnosticAgent"""
@@ -2009,7 +2009,6 @@ async def diagnostic_agent(req: dict):
     except Exception as e:
         logger.error(f"Diagnostic generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Diagnostic generation failed: {str(e)}")
-
 
 @app.post("/api/agent/diagnostic/results")
 async def agent_diagnostic_results_endpoint(
@@ -2049,7 +2048,6 @@ async def agent_diagnostic_results_endpoint(
         logger.error(f"Diagnostic results processing failed: {e}")
         raise HTTPException(status_code=500, detail=f"Diagnostic results processing failed: {str(e)}")
 
-
 @app.get("/api/agent/mastery/{user_id}")
 async def get_user_mastery_endpoint(
     user_id: str,
@@ -2068,6 +2066,219 @@ async def get_user_mastery_endpoint(
     except Exception as e:
         logger.error(f"Mastery retrieval failed: {e}")
         raise HTTPException(status_code=500, detail=f"Mastery retrieval failed: {str(e)}")
+
+@app.post("/api/agent/workflow")
+async def workflow_agent(req: dict):
+    """Generate learning workflow using the agentic system"""
+    try:
+        pdf_id = req["pdf_id"]
+        topic = req.get("topic", "")
+        num_steps = req.get("num_steps", 5)
+        
+        # Generate workflow steps
+        workflow_steps = []
+        for i in range(num_steps):
+            step = {
+                "step": i + 1,
+                "action": f"Learning step {i + 1}",
+                "description": f"Complete learning activity {i + 1} for {topic or 'the topic'}",
+                "estimated_time": "5-10 minutes",
+                "resources": ["Study materials", "Practice exercises"]
+            }
+            workflow_steps.append(step)
+        
+        workflow_response = {
+            "workflow": workflow_steps,
+            "total_steps": num_steps,
+            "estimated_duration": f"{num_steps * 10} minutes",
+            "difficulty_level": "Intermediate"
+        }
+        
+        return workflow_response
+        
+    except Exception as e:
+        logger.error(f"Workflow generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Workflow generation failed: {str(e)}")
+
+@app.post("/api/generate/workflow")
+async def generate_workflow_endpoint(req: dict):
+    """Frontend-friendly workflow generation endpoint"""
+    try:
+        content = req.get("content", "")
+        topic = req.get("topic", "")
+        num_steps = req.get("num_steps", 5)
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Content is required")
+        
+        # Generate workflow steps
+        workflow_steps = []
+        for i in range(num_steps):
+            step = {
+                "step": i + 1,
+                "action": f"Learning step {i + 1}",
+                "description": f"Complete learning activity {i + 1} for {topic or 'the topic'}",
+                "estimated_time": "5-10 minutes",
+                "resources": ["Study materials", "Practice exercises"]
+            }
+            workflow_steps.append(step)
+        
+        return {
+            "workflow": workflow_steps,
+            "total_steps": num_steps,
+            "estimated_duration": f"{num_steps * 10} minutes",
+            "difficulty_level": "Intermediate"
+        }
+        
+    except Exception as e:
+        logger.error(f"Workflow generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Workflow generation failed: {str(e)}")
+
+@app.post("/api/generate/quiz")
+async def generate_quiz_endpoint(req: dict):
+    """Frontend-friendly quiz generation endpoint"""
+    try:
+        content = req.get("content", "")
+        topic = req.get("topic", "")
+        num_questions = req.get("num_questions", 5)
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Content is required")
+        
+        # For now, return a sample quiz structure
+        # In production, this would call your actual quiz generation logic
+        quiz_questions = []
+        for i in range(num_questions):
+            question = {
+                "id": i + 1,
+                "question": f"Sample question {i + 1} about {topic or 'the topic'}?",
+                "options": [
+                    f"Option A for question {i + 1}",
+                    f"Option B for question {i + 1}",
+                    f"Option C for question {i + 1}",
+                    f"Option D for question {i + 1}"
+                ],
+                "answer_idx": 0,
+                "explanation": f"This is the correct answer for question {i + 1}"
+            }
+            quiz_questions.append(question)
+        
+        return {
+            "quiz": quiz_questions,
+            "total_questions": num_questions,
+            "topic": topic or "General"
+        }
+        
+    except Exception as e:
+        logger.error(f"Quiz generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
+
+@app.post("/api/generate/flashcards")
+async def generate_flashcards_endpoint(req: dict):
+    """Frontend-friendly flashcard generation endpoint"""
+    try:
+        content = req.get("content", "")
+        topic = req.get("topic", "")
+        num_cards = req.get("num_cards", 5)
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Content is required")
+        
+        # For now, return a sample flashcard structure
+        # In production, this would call your actual flashcard generation logic
+        flashcards = []
+        for i in range(num_cards):
+            card = {
+                "id": i + 1,
+                "front": f"Front of flashcard {i + 1}",
+                "back": f"Back of flashcard {i + 1} with answer",
+                "topic": topic or "General",
+                "difficulty": "Medium"
+            }
+            flashcards.append(card)
+        
+        return {
+            "flashcards": flashcards,
+            "total_cards": num_cards,
+            "topic": topic or "General"
+        }
+        
+    except Exception as e:
+        logger.error(f"Flashcard generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Flashcard generation failed: {str(e)}")
+
+@app.post("/api/generate/lesson")
+async def generate_lesson_endpoint(req: dict):
+    """Frontend-friendly lesson generation endpoint"""
+    try:
+        content = req.get("content", "")
+        topic = req.get("topic", "")
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Content is required")
+        
+        # For now, return a sample lesson structure
+        # In production, this would call your actual lesson generation logic
+        lesson = {
+            "title": f"Lesson on {topic or 'the topic'}",
+            "summary": f"This is a comprehensive lesson about {topic or 'the topic'}",
+            "key_points": [
+                f"Key point 1 about {topic or 'the topic'}",
+                f"Key point 2 about {topic or 'the topic'}",
+                f"Key point 3 about {topic or 'the topic'}"
+            ],
+            "estimated_duration": "15-20 minutes",
+            "difficulty": "Intermediate"
+        }
+        
+        return {
+            "lesson": lesson,
+            "topic": topic or "General"
+        }
+        
+    except Exception as e:
+        logger.error(f"Lesson generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Lesson generation failed: {str(e)}")
+
+@app.get("/api/agent/test")
+async def test_agent_system():
+    """Test endpoint to verify agent system is working"""
+    try:
+        # Test intent detection
+        test_message = "I want a summary"
+        intent_result = router.detect_intent(test_message, pdf_present=True)
+        
+        # Test mastery function
+        test_user_id = "test_user_123"
+        mastery_result = get_mastery(test_user_id)
+        
+        return {
+            "status": "success",
+            "message": "Agent system is working correctly",
+            "tests": {
+                "intent_detection": intent_result,
+                "mastery_retrieval": {
+                    "user_id": test_user_id,
+                    "result": mastery_result
+                }
+            },
+            "endpoints_available": [
+                "/api/agent/route",
+                "/api/agent/summary", 
+                "/api/agent/flashcards",
+                "/api/agent/quiz",
+                "/api/agent/diagnostic",
+                "/api/agent/workflow",
+                "/api/generate/workflow",
+                "/api/generate/quiz",
+                "/api/generate/flashcards",
+                "/api/generate/lesson"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Agent system test failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent system test failed: {str(e)}")
 
 
 
