@@ -35,6 +35,7 @@ class UnifiedCareerSystem:
         # Initialize API helpers
         self.cohere_api_key = os.getenv("COHERE_API_KEY")
         self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_api_key_2 = os.getenv("GROQ_API_KEY_2")
         self.data_path = Path(__file__).parent / "data"
         
         # Load career data and roadmaps
@@ -66,23 +67,50 @@ class UnifiedCareerSystem:
             return res.json()["embeddings"]
 
     async def call_groq(self, messages: List[Dict]) -> str:
-        """Call Groq API with optimized model"""
+        """Call Groq API with optimized model and fallback to GROQ_API_KEY_2"""
+        # Try primary API key first
+        if self.groq_api_key:
+            result = await self._call_groq_with_key(messages, self.groq_api_key, "primary")
+            if result:
+                return result
+        
+        # Try fallback key if primary failed
+        if self.groq_api_key_2:
+            logger.info("Primary GROQ API key failed, trying fallback key")
+            result = await self._call_groq_with_key(messages, self.groq_api_key_2, "fallback")
+            if result:
+                return result
+        
+        logger.error("All GROQ API keys failed")
+        return ""
+
+    async def _call_groq_with_key(self, messages: List[Dict], api_key: str, key_type: str) -> str:
+        """Call Groq API with specific key"""
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self.groq_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama3-8b-8192",  # Lightweight model for best performance
+            "model": "llama-3.3-70b-versatile",  # High-quality model for best performance
             "messages": messages,
             "temperature": 0.7,
             "stream": False
         }
 
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, headers=headers, json=payload)
-            res.raise_for_status()
-            return res.json()["choices"][0]["message"]["content"]
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                response_data = res.json()
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    logger.info(f"GROQ API call successful using {key_type} key")
+                    return response_data["choices"][0]["message"]["content"]
+                logger.error(f"Unexpected Groq response format: {response_data}")
+                return ""
+        except Exception as e:
+            logger.error(f"Groq API call failed ({key_type} key): {e}")
+            return ""
     
     def _load_career_data(self) -> pd.DataFrame:
         """Load career data from CSV"""
@@ -221,6 +249,14 @@ class UnifiedCareerSystem:
             career_analysis = await self._get_embedding_based_career_analysis(
                 target_role, user_skills, user_interests, user_profile
             )
+            
+            # Ensure the response has the required fields for frontend
+            if "total_duration" not in career_analysis:
+                career_analysis["total_duration"] = "6-12 months"
+            if "difficulty_level" not in career_analysis:
+                career_analysis["difficulty_level"] = "Intermediate"
+            if "steps" not in career_analysis:
+                career_analysis["steps"] = []
             
             return career_analysis
             
@@ -432,8 +468,14 @@ class UnifiedCareerSystem:
             # Generate matching reasons
             matching_reasons = self._generate_matching_reasons(target_role, user_skills, user_interests)
             
+            # Get role-specific duration and difficulty
+            duration, difficulty = self._get_role_difficulty_and_duration(target_role)
+            
             return {
                 "target_role": target_role,
+                "career_title": target_role,
+                "total_duration": duration["entry"],
+                "difficulty_level": difficulty,
                 "roadmap": roadmap,
                 "interview_preparation": interview_prep,
                 "market_insights": market_insights,
@@ -445,7 +487,8 @@ class UnifiedCareerSystem:
                 },
                 "confidence_score": confidence_score,
                 "timeline": self._create_timeline(roadmap, user_profile),
-                "estimated_time_to_target": self._estimate_time_to_target(roadmap, user_profile)
+                "estimated_time_to_target": self._estimate_time_to_target(roadmap, user_profile),
+                "steps": self._create_roadmap_steps(target_role, duration)
             }
             
         except Exception as e:
@@ -1029,115 +1072,43 @@ class UnifiedCareerSystem:
             return ""
     
     def _create_fallback_roadmap(self, target_role: str) -> Dict:
-        """Create detailed fallback roadmap"""
+        """Create detailed fallback roadmap with role-specific content"""
+        # Get role-specific information from career data
+        career_info = self._get_career_info_for_role(target_role)
+        
+        # Determine appropriate duration and difficulty based on role
+        duration, difficulty = self._get_role_difficulty_and_duration(target_role)
+        
         return {
             "entry_level": {
                 "title": f"Junior {target_role}",
-                "skills": [
-                    "Basic technical skills",
-                    "Industry fundamentals", 
-                    "Communication skills",
-                    "Problem-solving abilities",
-                    "Team collaboration"
-                ],
-                "courses": [
-                    f"{target_role} Fundamentals",
-                    "Industry Best Practices",
-                    "Professional Communication",
-                    "Project Management Basics"
-                ],
-                "duration": "6-12 months",
-                "salary_range": "$50,000 - $70,000",
-                "responsibilities": [
-                    "Learn and apply basic concepts",
-                    "Work under supervision",
-                    "Contribute to team projects",
-                    "Follow established procedures"
-                ],
-                "projects": [
-                    "Small feature development",
-                    "Bug fixes and maintenance",
-                    "Documentation updates",
-                    "Testing and quality assurance"
-                ],
-                "learning_path": [
-                    "Complete foundational courses",
-                    "Build a portfolio project",
-                    "Network with professionals",
-                    "Apply for entry-level positions"
-                ]
+                "skills": self._get_role_specific_skills(target_role, "entry"),
+                "courses": self._get_role_specific_courses(target_role, "entry"),
+                "duration": duration["entry"],
+                "salary_range": career_info.get("entry_salary", "$50,000 - $70,000"),
+                "responsibilities": self._get_role_specific_responsibilities(target_role, "entry"),
+                "projects": self._get_role_specific_projects(target_role, "entry"),
+                "learning_path": self._get_role_specific_learning_path(target_role, "entry")
             },
             "mid_level": {
                 "title": target_role,
-                "skills": [
-                    "Advanced technical expertise",
-                    "Leadership and mentoring",
-                    "Project management",
-                    "Strategic thinking",
-                    "Industry specialization"
-                ],
-                "courses": [
-                    "Advanced {target_role} Techniques",
-                    "Leadership Development",
-                    "Strategic Planning",
-                    "Industry Specialization"
-                ],
-                "duration": "2-4 years",
-                "salary_range": "$70,000 - $120,000",
-                "responsibilities": [
-                    "Lead project teams",
-                    "Mentor junior professionals",
-                    "Make technical decisions",
-                    "Contribute to strategic planning"
-                ],
-                "projects": [
-                    "Complex system development",
-                    "Architecture design",
-                    "Team leadership",
-                    "Cross-functional collaboration"
-                ],
-                "learning_path": [
-                    "Take on leadership roles",
-                    "Develop specialized expertise",
-                    "Build a strong professional network",
-                    "Contribute to industry knowledge"
-                ]
+                "skills": self._get_role_specific_skills(target_role, "mid"),
+                "courses": self._get_role_specific_courses(target_role, "mid"),
+                "duration": duration["mid"],
+                "salary_range": career_info.get("mid_salary", "$70,000 - $120,000"),
+                "responsibilities": self._get_role_specific_responsibilities(target_role, "mid"),
+                "projects": self._get_role_specific_projects(target_role, "mid"),
+                "learning_path": self._get_role_specific_learning_path(target_role, "mid")
             },
             "senior_level": {
                 "title": f"Senior {target_role}",
-                "skills": [
-                    "Expert-level technical skills",
-                    "Strategic leadership",
-                    "Business acumen",
-                    "Innovation and creativity",
-                    "Industry thought leadership"
-                ],
-                "courses": [
-                    "Executive Leadership",
-                    "Strategic Management",
-                    "Innovation and Design Thinking",
-                    "Industry Expert Certification"
-                ],
-                "duration": "5+ years",
-                "salary_range": "$120,000 - $200,000",
-                "responsibilities": [
-                    "Set technical strategy",
-                    "Lead large teams",
-                    "Make executive decisions",
-                    "Drive innovation initiatives"
-                ],
-                "projects": [
-                    "Strategic initiatives",
-                    "Architecture leadership",
-                    "Innovation projects",
-                    "Industry thought leadership"
-                ],
-                "learning_path": [
-                    "Develop executive presence",
-                    "Build industry reputation",
-                    "Contribute to strategic decisions",
-                    "Mentor future leaders"
-                ]
+                "skills": self._get_role_specific_skills(target_role, "senior"),
+                "courses": self._get_role_specific_courses(target_role, "senior"),
+                "duration": duration["senior"],
+                "salary_range": career_info.get("senior_salary", "$120,000 - $200,000"),
+                "responsibilities": self._get_role_specific_responsibilities(target_role, "senior"),
+                "projects": self._get_role_specific_projects(target_role, "senior"),
+                "learning_path": self._get_role_specific_learning_path(target_role, "senior")
             }
         }
     
@@ -1183,22 +1154,194 @@ class UnifiedCareerSystem:
 
     
     def _get_fallback_roadmap(self, target_role: Optional[str], user_skills: Optional[List[str]], user_interests: Optional[List[str]]) -> Dict:
-        """Get fallback roadmap"""
+        """Get fallback roadmap with role-specific information"""
+        role = target_role or "Software Developer"
+        career_info = self._get_career_info_for_role(role)
+        duration, difficulty = self._get_role_difficulty_and_duration(role)
+        
         return {
-            "target_role": target_role or "Software Developer",
-            "roadmap": self._create_fallback_roadmap(target_role or "Software Developer"),
-            "interview_preparation": self._get_fallback_interview_prep(target_role or "Software Developer"),
-            "market_insights": self._get_fallback_market_insights(None),
+            "target_role": role,
+            "career_title": role,
+            "total_duration": duration["entry"],
+            "difficulty_level": difficulty,
+            "roadmap": self._create_fallback_roadmap(role),
+            "interview_preparation": self._get_fallback_interview_prep(role),
+            "market_insights": {
+                "salary_range": f"${career_info['salary_low']:,} - ${career_info['salary_high']:,}",
+                "growth_rate": f"{career_info['growth_pct']:.1f}%",
+                "demand_level": "High" if career_info['growth_pct'] > 10 else "Medium",
+                "top_skills": career_info['top_skills'].split(',')[:5] if career_info['top_skills'] else ["Technical skills", "Problem solving", "Communication"],
+                "day_in_life": career_info['day_in_life']
+            },
             "learning_plan": self._get_fallback_learning_plan(),
             "coaching_advice": {
-                "advice": "Focus on developing the skills outlined in the roadmap",
-                "tips": ["Start with foundational skills", "Build a portfolio", "Network in the field"],
-                "next_steps": ["Start with foundational skills", "Build a portfolio", "Network in the field"]
+                "advice": f"Focus on developing the skills outlined in the roadmap for {role}",
+                "tips": [
+                    f"Start with {role} fundamentals",
+                    "Build a portfolio showcasing your skills",
+                    "Network with professionals in the field",
+                    "Stay updated with industry trends"
+                ],
+                "next_steps": [
+                    f"Complete {role} foundational training",
+                    "Build practical projects",
+                    "Connect with industry professionals",
+                    "Apply for entry-level positions"
+                ]
             },
-            "confidence_score": 0.5,
+            "confidence_score": 0.7,
             "timeline": {"timeline": []},
-            "estimated_time_to_target": {"total_months": 36, "estimated_years": 3.0, "fast_track_possible": True}
+            "estimated_time_to_target": {
+                "total_months": 12 if "month" in duration["entry"] else 24,
+                "estimated_years": 1.0 if "month" in duration["entry"] else 2.0,
+                "fast_track_possible": True
+            },
+            "steps": self._create_roadmap_steps(role, duration)
         }
+
+    def _get_career_info_for_role(self, target_role: str) -> Dict:
+        """Get career information for a specific role from O*NET data"""
+        try:
+            # Find matching career in O*NET data
+            for _, career in self.career_data.iterrows():
+                if target_role.lower() in career['title'].lower() or career['title'].lower() in target_role.lower():
+                    return {
+                        "title": career['title'],
+                        "salary_low": career.get('salary_low', 50000),
+                        "salary_high": career.get('salary_high', 100000),
+                        "growth_pct": career.get('growth_pct', 15),
+                        "top_skills": career.get('top_skills', ''),
+                        "day_in_life": career.get('day_in_life', ''),
+                        "entry_salary": f"${career.get('salary_low', 50000):,} - ${int(career.get('salary_low', 50000) * 1.3):,}",
+                        "mid_salary": f"${int(career.get('salary_low', 50000) * 1.3):,} - ${int(career.get('salary_high', 100000) * 0.8):,}",
+                        "senior_salary": f"${int(career.get('salary_high', 100000) * 0.8):,} - ${career.get('salary_high', 100000):,}"
+                    }
+        except Exception as e:
+            logger.error(f"Error getting career info for {target_role}: {e}")
+        
+        # Fallback if no match found
+        return {
+            "title": target_role,
+            "salary_low": 50000,
+            "salary_high": 100000,
+            "growth_pct": 15,
+            "top_skills": "technical skills, problem solving, communication",
+            "day_in_life": "Collaborate with team, solve problems, learn new technologies",
+            "entry_salary": "$50,000 - $65,000",
+            "mid_salary": "$65,000 - $90,000",
+            "senior_salary": "$90,000 - $120,000"
+        }
+    
+    def _get_role_difficulty_and_duration(self, target_role: str) -> tuple:
+        """Get appropriate duration and difficulty for a role"""
+        role_lower = target_role.lower()
+        
+        # Technical roles typically take longer
+        if any(tech in role_lower for tech in ['engineer', 'developer', 'scientist', 'architect']):
+            return {
+                "entry": "8-12 months",
+                "mid": "2-4 years", 
+                "senior": "5+ years"
+            }, "Intermediate"
+        # Management roles
+        elif any(mgmt in role_lower for mgmt in ['manager', 'director', 'lead', 'head']):
+            return {
+                "entry": "6-10 months",
+                "mid": "2-3 years",
+                "senior": "4+ years"
+            }, "Advanced"
+        # Creative roles
+        elif any(creative in role_lower for creative in ['designer', 'writer', 'artist', 'creative']):
+            return {
+                "entry": "4-8 months",
+                "mid": "1-3 years",
+                "senior": "3+ years"
+            }, "Beginner"
+        # Default
+        else:
+            return {
+                "entry": "6-12 months",
+                "mid": "2-3 years",
+                "senior": "4+ years"
+            }, "Intermediate"
+    
+    def _get_role_specific_skills(self, target_role: str, level: str) -> List[str]:
+        """Get role-specific skills based on O*NET data"""
+        career_info = self._get_career_info_for_role(target_role)
+        base_skills = career_info.get('top_skills', '').split(',')[:3] if career_info.get('top_skills') else []
+        
+        # Add level-specific skills
+        if level == "entry":
+            return base_skills + ["Basic problem solving", "Communication", "Learning agility"]
+        elif level == "mid":
+            return base_skills + ["Advanced problem solving", "Leadership", "Project management"]
+        else:  # senior
+            return base_skills + ["Strategic thinking", "Team leadership", "Industry expertise"]
+    
+    def _get_role_specific_courses(self, target_role: str, level: str) -> List[str]:
+        """Get role-specific courses"""
+        if level == "entry":
+            return [f"{target_role} Fundamentals", "Industry Basics", "Professional Skills"]
+        elif level == "mid":
+            return [f"Advanced {target_role}", "Leadership Development", "Specialization"]
+        else:  # senior
+            return [f"Senior {target_role} Mastery", "Executive Leadership", "Strategic Planning"]
+    
+    def _get_role_specific_responsibilities(self, target_role: str, level: str) -> List[str]:
+        """Get role-specific responsibilities"""
+        if level == "entry":
+            return ["Learn core concepts", "Work under supervision", "Complete assigned tasks", "Build foundational skills"]
+        elif level == "mid":
+            return ["Lead small projects", "Mentor junior team members", "Make technical decisions", "Contribute to strategy"]
+        else:  # senior
+            return ["Set technical direction", "Lead large initiatives", "Make strategic decisions", "Drive innovation"]
+    
+    def _get_role_specific_projects(self, target_role: str, level: str) -> List[str]:
+        """Get role-specific project types"""
+        if level == "entry":
+            return ["Small feature development", "Bug fixes", "Documentation", "Testing"]
+        elif level == "mid":
+            return ["Feature development", "System design", "Team coordination", "Process improvement"]
+        else:  # senior
+            return ["Architecture design", "Strategic initiatives", "Cross-team collaboration", "Innovation projects"]
+    
+    def _get_role_specific_learning_path(self, target_role: str, level: str) -> List[str]:
+        """Get role-specific learning path"""
+        if level == "entry":
+            return ["Complete foundational training", "Build portfolio projects", "Network with professionals", "Apply for positions"]
+        elif level == "mid":
+            return ["Take on leadership roles", "Develop expertise", "Build professional network", "Contribute to knowledge"]
+        else:  # senior
+            return ["Develop executive presence", "Build industry reputation", "Mentor others", "Drive strategic initiatives"]
+    
+    def _create_roadmap_steps(self, target_role: str, duration: Dict) -> List[Dict]:
+        """Create roadmap steps for the frontend"""
+        return [
+            {
+                "step": 1,
+                "title": f"Foundation Skills for {target_role}",
+                "description": f"Learn the fundamental skills required for {target_role}",
+                "duration": duration["entry"],
+                "skills": self._get_role_specific_skills(target_role, "entry")[:3],
+                "resources": [f"{target_role} Fundamentals", "Industry Basics", "Professional Skills"]
+            },
+            {
+                "step": 2,
+                "title": f"Intermediate {target_role} Development",
+                "description": "Build practical projects and gain hands-on experience",
+                "duration": duration["mid"],
+                "skills": self._get_role_specific_skills(target_role, "mid")[:3],
+                "resources": [f"Advanced {target_role}", "Project Management", "Leadership Skills"]
+            },
+            {
+                "step": 3,
+                "title": f"Advanced {target_role} Specialization",
+                "description": "Specialize in advanced topics and prepare for senior roles",
+                "duration": duration["senior"],
+                "skills": self._get_role_specific_skills(target_role, "senior")[:3],
+                "resources": [f"Senior {target_role} Mastery", "Strategic Planning", "Industry Leadership"]
+            }
+        ]
 
 # Global instance for easy access
 unified_career_system = UnifiedCareerSystem() 

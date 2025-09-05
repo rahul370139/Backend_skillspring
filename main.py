@@ -5,7 +5,7 @@ comprehensive API server with enhanced career guidance, learning management,
 and AI-powered features.
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 import asyncio, tempfile, os, json
@@ -2012,15 +2012,23 @@ async def diagnostic_agent(req: dict):
 
 @app.post("/api/agent/diagnostic/results")
 async def agent_diagnostic_results_endpoint(
-    request: dict
+    request: Request
 ):
     """Process diagnostic results and update mastery scores"""
     try:
-        pdf_id = request.get("pdf_id")
-        user_id = request.get("user_id")
-        topic = request.get("topic", "")
-        user_answers = request.get("user_answers", [])
-        session_id = request.get("session_id")
+        logger.debug(f"Diagnostic results endpoint called")
+        
+        # Parse JSON body
+        body = await request.json()
+        logger.debug(f"Parsed request body: {body}")
+        
+        pdf_id = body.get("pdf_id")
+        user_id = body.get("user_id")
+        topic = body.get("topic", "")
+        user_answers = body.get("user_answers", [])
+        session_id = body.get("session_id")
+        
+        logger.debug(f"Extracted parameters: pdf_id={pdf_id}, user_id={user_id}, topic={topic}, user_answers={user_answers}, session_id={session_id}")
         
         if not pdf_id or not user_id or not user_answers:
             raise HTTPException(status_code=400, detail="pdf_id, user_id, and user_answers are required")
@@ -2055,7 +2063,7 @@ async def get_user_mastery_endpoint(
 ):
     """Get user mastery scores for topics"""
     try:
-        mastery_data = get_mastery(user_id, topic)
+        mastery_data = get_mastery(user_id)
         
         return {
             "status": "success",

@@ -136,14 +136,40 @@ def _parse_json_safely(raw: str) -> Optional[Dict]:
 _LLM_SEMAPHORE = asyncio.Semaphore(2)
 
 async def call_groq(messages: List[Dict]) -> str:
-    """Call Groq API with optimized model"""
+    """Call Groq API with optimized model and fallback to GROQ_API_KEY_2"""
+    # Try primary API key first
+    primary_key = os.getenv('GROQ_API_KEY')
+    fallback_key = os.getenv('GROQ_API_KEY_2')
+    
+    if not primary_key and not fallback_key:
+        logger.error("No GROQ API keys found in environment variables")
+        return ""
+    
+    # Try primary key first
+    if primary_key:
+        result = await _call_groq_with_key(messages, primary_key, "primary")
+        if result:
+            return result
+    
+    # Try fallback key if primary failed
+    if fallback_key:
+        logger.info("Primary GROQ API key failed, trying fallback key")
+        result = await _call_groq_with_key(messages, fallback_key, "fallback")
+        if result:
+            return result
+    
+    logger.error("All GROQ API keys failed")
+    return ""
+
+async def _call_groq_with_key(messages: List[Dict], api_key: str, key_type: str) -> str:
+    """Call Groq API with specific key"""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama3-8b-8192",  # Lightweight model for best performance
+        "model": "llama-3.3-70b-versatile",  # High-quality model for best performance
         "messages": messages,
         "temperature": 0.3,  # Stricter JSON adherence
         "stream": False
@@ -161,13 +187,14 @@ async def call_groq(messages: List[Dict]) -> str:
                     res.raise_for_status()
                     response_data = res.json()
                     if "choices" in response_data and len(response_data["choices"]) > 0:
+                        logger.info(f"GROQ API call successful using {key_type} key")
                         return response_data["choices"][0]["message"]["content"]
                     logger.error(f"Unexpected Groq response format: {response_data}")
                     return ""
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
                 text = e.response.text
-                logger.error(f"Groq API HTTP error: {status} - {text}")
+                logger.error(f"Groq API HTTP error ({key_type} key): {status} - {text}")
                 # Handle 429 rate limit with backoff
                 if status == 429 and attempt < max_retries:
                     wait_s = backoff
@@ -187,7 +214,7 @@ async def call_groq(messages: List[Dict]) -> str:
                     continue
                 return ""
             except httpx.TimeoutException:
-                logger.error("Groq API request timed out")
+                logger.error(f"Groq API request timed out ({key_type} key)")
                 if attempt < max_retries:
                     await asyncio.sleep(backoff)
                     attempt += 1
@@ -195,7 +222,7 @@ async def call_groq(messages: List[Dict]) -> str:
                     continue
                 return ""
             except Exception as e:
-                logger.error(f"Groq API call failed: {e}")
+                logger.error(f"Groq API call failed ({key_type} key): {e}")
                 if attempt < max_retries:
                     await asyncio.sleep(backoff)
                     attempt += 1

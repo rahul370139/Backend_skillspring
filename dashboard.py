@@ -21,7 +21,10 @@ class DashboardSystem:
     
     def __init__(self):
         """Initialize dashboard system with AI capabilities"""
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_api_key_2 = os.getenv("GROQ_API_KEY_2")
+        # Initialize with primary key, will fallback if needed
+        self.client = Groq(api_key=self.groq_api_key) if self.groq_api_key else None
         self.career_data = self._load_career_data()
         self.micro_lessons = self._load_micro_lessons()
         
@@ -431,18 +434,39 @@ class DashboardSystem:
             return self._get_fallback_insights()
     
     async def _call_groq(self, prompt: str) -> str:
-        """Call Groq API"""
+        """Call Groq API with fallback to GROQ_API_KEY_2"""
+        # Try primary API key first
+        if self.groq_api_key and self.client:
+            result = await self._call_groq_with_key(prompt, self.groq_api_key, "primary")
+            if result:
+                return result
+        
+        # Try fallback key if primary failed
+        if self.groq_api_key_2:
+            logger.info("Primary GROQ API key failed, trying fallback key")
+            result = await self._call_groq_with_key(prompt, self.groq_api_key_2, "fallback")
+            if result:
+                return result
+        
+        logger.error("All GROQ API keys failed")
+        return "AI service temporarily unavailable"
+
+    async def _call_groq_with_key(self, prompt: str, api_key: str, key_type: str) -> str:
+        """Call Groq API with specific key"""
         try:
-            response = self.client.chat.completions.create(
-                model="llama3-8b-8192",
+            # Create a new client with the specific key
+            client = Groq(api_key=api_key)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
                 max_tokens=2000
             )
+            logger.info(f"GROQ API call successful using {key_type} key")
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"Error calling Groq API: {e}")
-            return "AI service temporarily unavailable"
+            logger.error(f"Groq API call failed ({key_type} key): {e}")
+            return ""
     
     # Fallback methods
     def _get_fallback_recommendations(self, user_id: str) -> Dict:

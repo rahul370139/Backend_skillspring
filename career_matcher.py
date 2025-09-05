@@ -39,6 +39,7 @@ class CareerMatcher:
         # Initialize API helpers
         self.cohere_api_key = os.getenv("COHERE_API_KEY")
         self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_api_key_2 = os.getenv("GROQ_API_KEY_2")
         
         logger.info("CareerMatcher initialized successfully with embedding capabilities")
     
@@ -762,15 +763,33 @@ class CareerMatcher:
             return {"error": f"Analysis failed: {str(e)}"}
     
     async def _call_groq(self, prompt: str) -> str:
-        """Call Groq API for AI generation"""
+        """Call Groq API for AI generation with fallback to GROQ_API_KEY_2"""
+        # Try primary API key first
+        if self.groq_api_key:
+            result = await self._call_groq_with_key(prompt, self.groq_api_key, "primary")
+            if result:
+                return result
+        
+        # Try fallback key if primary failed
+        if self.groq_api_key_2:
+            logger.info("Primary GROQ API key failed, trying fallback key")
+            result = await self._call_groq_with_key(prompt, self.groq_api_key_2, "fallback")
+            if result:
+                return result
+        
+        logger.error("All GROQ API keys failed")
+        return "AI service temporarily unavailable"
+
+    async def _call_groq_with_key(self, prompt: str, api_key: str, key_type: str) -> str:
+        """Call Groq API with specific key"""
         try:
             url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {
-                "Authorization": f"Bearer {self.groq_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "llama3-8b-8192",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
                 "stream": False
@@ -779,10 +798,15 @@ class CareerMatcher:
             async with httpx.AsyncClient() as client:
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
-                return res.json()["choices"][0]["message"]["content"]
+                response_data = res.json()
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    logger.info(f"GROQ API call successful using {key_type} key")
+                    return response_data["choices"][0]["message"]["content"]
+                logger.error(f"Unexpected Groq response format: {response_data}")
+                return ""
         except Exception as e:
-            logger.error(f"Groq API call failed: {e}")
-            return "AI service temporarily unavailable"
+            logger.error(f"Groq API call failed ({key_type} key): {e}")
+            return ""
     
     # Fallback methods
     def _get_fallback_interview_prep(self, career_title: str) -> Dict:

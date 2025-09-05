@@ -213,16 +213,22 @@ class DiagnosticAgent(BaseAgent):
     async def process_results(self, user_answers: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Process diagnostic results and update mastery"""
         try:
+            logger.debug(f"process_results called with user_answers: {user_answers}")
+            logger.debug(f"user_answers type: {type(user_answers)}")
+            logger.debug(f"user_answers length: {len(user_answers) if user_answers else 'None'}")
             self.log_action("results_processing_started", {"answer_count": len(user_answers)})
             
             # Calculate results
             results = self._calculate_results(user_answers)
+            logger.debug(f"Calculated results: {results}")
             
             # Update mastery using optimized mastery system
             mastery_update = update_mastery(self.user_id, {self.topic: results["overall_score"]})
+            logger.debug(f"Mastery update: {mastery_update}")
             
             # Generate remediation recommendations
             remediation = await self._generate_remediation(results)
+            logger.debug(f"Remediation: {remediation}")
             
             # Prepare comprehensive results
             diagnostic_results = {
@@ -236,7 +242,7 @@ class DiagnosticAgent(BaseAgent):
             
             self.log_action("results_processing_completed", {
                 "overall_score": results["overall_score"],
-                "mastery_change": mastery_update.get("mastery_change", 0)
+                "mastery_change": mastery_update.get("mastery_change", 0) if mastery_update else 0
             })
             
             return diagnostic_results
@@ -248,11 +254,13 @@ class DiagnosticAgent(BaseAgent):
     def _calculate_results(self, user_answers: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate diagnostic results from user answers"""
         try:
+            logger.debug(f"Calculating results for user_answers: {user_answers}")
             total_questions = len(user_answers)
             correct_answers = 0
             
             for answer in user_answers:
-                if answer.get("correct", False):
+                logger.debug(f"Processing answer: {answer}")
+                if answer.get("is_correct", False):
                     correct_answers += 1
             
             overall_score = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
@@ -290,18 +298,22 @@ class DiagnosticAgent(BaseAgent):
                 return {"needed": False, "message": "Great performance! Continue with advanced topics."}
             
             # Generate remedial flashcards
+            logger.debug(f"Generating flashcards for pdf_id: {self.pdf_id}, topic: {self.topic}")
             remedial_flashcards = await gen_flashcards(
                 pdf_id=self.pdf_id,
                 topic=self.topic,
                 count=5
             )
+            logger.debug(f"Generated flashcards: {remedial_flashcards}")
             
             # Generate remedial quiz
+            logger.debug(f"Generating quiz for pdf_id: {self.pdf_id}, topic: {self.topic}")
             remedial_quiz = await gen_quiz(
                 pdf_id=self.pdf_id,
                 topic=self.topic,
                 count=3
             )
+            logger.debug(f"Generated quiz: {remedial_quiz}")
             
             return {
                 "needed": True,
@@ -335,6 +347,13 @@ class DiagnosticAgent(BaseAgent):
         try:
             next_steps = []
             
+            # Debug logging
+            logger.debug(f"Next steps generation - results: {results}, mastery_update: {mastery_update}")
+            
+            if not results or "overall_score" not in results:
+                logger.warning("Invalid results structure for next steps generation")
+                return ["Continue learning and practicing"]
+            
             if results["overall_score"] < 70:
                 next_steps.extend([
                     "Review the remedial flashcards",
@@ -349,7 +368,7 @@ class DiagnosticAgent(BaseAgent):
                 ])
             
             # Add mastery-specific recommendations
-            if mastery_update.get("next_milestone"):
+            if mastery_update and mastery_update.get("next_milestone"):
                 milestone = mastery_update["next_milestone"]
                 next_steps.append(f"Work toward {milestone['description']} (need {milestone['points_needed']} more points)")
             

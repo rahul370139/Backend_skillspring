@@ -13,7 +13,7 @@ A comprehensive backend system for AI-powered career guidance and personalized l
 
 ### Technology Stack
 - **Framework**: FastAPI (Python 3.9+)
-- **LLM Provider**: Groq (llama3-8b-8192 model)
+- **LLM Provider**: Groq (llama-3.3-70b-versatile model)
 - **Embeddings**: Cohere (text-embedding-ada-002)
 - **Database**: Supabase (PostgreSQL)
 - **Vector Search**: pgvector extension
@@ -81,7 +81,7 @@ A comprehensive backend system for AI-powered career guidance and personalized l
 ## 🔧 Technical Implementation
 
 ### LLM Integration
-- **Model**: Groq's llama3-8b-8192 (optimized for speed)
+- **Model**: Groq's llama-3.3-70b-versatile (optimized for quality)
 - **Temperature**: 0.3 (strict JSON adherence)
 - **Timeout**: 25 seconds with 2 retries
 - **Prompt Engineering**: Structured prompts for consistent outputs

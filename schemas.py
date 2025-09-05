@@ -436,6 +436,9 @@ class UnifiedRoadmapRequest(BaseModel):
 
 class UnifiedRoadmapResponse(BaseModel):
     target_role: str
+    career_title: Optional[str] = None
+    total_duration: Optional[str] = None
+    difficulty_level: Optional[str] = None
     roadmap: Dict[str, Any]
     interview_preparation: Dict[str, Any]
     market_insights: Dict[str, Any]
@@ -444,6 +447,7 @@ class UnifiedRoadmapResponse(BaseModel):
     confidence_score: float
     timeline: Dict[str, Any]
     estimated_time_to_target: Dict[str, Any]
+    steps: Optional[List[Dict[str, Any]]] = None
 
 class CareerDiscoveryRequest(BaseModel):
     selected_interests: List[str]
